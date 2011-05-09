@@ -483,46 +483,17 @@ namespace Aurora.Modules.CityBuilder
 
             regionInfo.RegionID = UUID.Random();
 
-            //  Determine if the default user account as specified in City Builder's configuration file
-            // has any predefined estates, if so, just select the first one for now. Perhaps a search of
-            // the estates to attempt to find a match to the details from the configuration file.
-            EstateConnector = Aurora.DataManager.DataManager.RequestPlugin<IEstateConnector>();
-            // Valid estate connection established.
-            if (EstateConnector != null)
-            {
-                //  Valid estate connector, determine if the default user account has any estates.
-                List<EstateSettings> estates = EstateConnector.GetEstates(m_DefaultUserAccount.PrincipalID);
-                // No estates are found, so construct a new one based on the default estate settings
-                // from the configuration file.
-                if (estates == null)
-                {
-                    // No estates present so construct one.
-                    m_DefaultEstate = new EstateSettings();
+            //Create an estate
+            m_DefaultEstate = new EstateSettings();
 
-                    m_log.InfoFormat("[CITY BUILDER]: No estates found for user {0}, constructing default estate.", m_DefaultUserAccount.Name);
+            m_log.InfoFormat("[CITY BUILDER]: No estates found for user {0}, constructing default estate.", m_DefaultUserAccount.Name);
 
-                    m_DefaultEstate.EstateOwner = m_DefaultUserAccount.PrincipalID;
-                    m_DefaultEstate.EstateName = m_DefaultEstateName;
-                    m_DefaultEstate.EstatePass = Util.Md5Hash(Util.Md5Hash(m_DefaultEstatePassword));
-                    m_DefaultEstate.EstateID = (uint)this.randomValue(1000);
+            m_DefaultEstate.EstateOwner = m_DefaultUserAccount.PrincipalID;
+            m_DefaultEstate.EstateName = m_DefaultEstateName;
+            m_DefaultEstate.EstatePass = Util.Md5Hash(Util.Md5Hash(m_DefaultEstatePassword));
+            m_DefaultEstate.EstateID = (uint)this.randomValue(1000);
 
-                    regionInfo.EstateSettings = EstateConnector.CreateEstate(m_DefaultEstate, regionInfo.RegionID);
-                }
-                else
-                {
-                    //  Estates have been found, select the first estate in the list. No checking is done
-                    // against the configuration file settings.
-                    m_DefaultEstate = estates[0];
-                    regionInfo.EstateSettings = m_DefaultEstate;
-                    m_log.InfoFormat("[CITY BUILDER]: {0} estates found for user {1}, selecting {2}",
-                        estates.Count, m_DefaultUserAccount.Name, m_DefaultEstate.EstateName);
-                }
-            }
-            else
-            {
-                m_log.Info("[CITY BUILDER]: No estate connection with server found.");
-                return (false);
-            }
+            regionInfo.EstateSettings = m_DefaultEstate; //Just set the estate, this module took care of the loading and the rest will leave it alone
 
             cityLandData.OwnerID = m_DefaultUserAccount.PrincipalID;
             cityLandData.Name = m_DefaultEstateName;
@@ -539,6 +510,7 @@ namespace Aurora.Modules.CityBuilder
             regionInfo.Startup = StartupType.Normal;
             regionInfo.ScopeID = UUID.Zero;
 
+            IParcelServiceConnector parcelService = Aurora.DataManager.DataManager.RequestPlugin<IParcelServiceConnector>();
             if (r == 1)
             {
                 m_log.Info("[CITY BUILDER]: Single region city.");
@@ -547,6 +519,8 @@ namespace Aurora.Modules.CityBuilder
                 regionInfo.FindExternalAutomatically = true;
                 regionInfo.InternalEndPoint = new IPEndPoint(address, regionPort++);
                 cityLandData.RegionID = regionInfo.RegionID;
+                if(parcelService != null)
+                    parcelService.StoreLandObject(cityLandData.LandData);
                 regionInfo.RegionName = "Region00";
                 regionInfo.RegionLocX = (int)m_DefaultStartLocation.X;
                 regionInfo.RegionLocY = (int)m_DefaultStartLocation.Y;
@@ -559,6 +533,7 @@ namespace Aurora.Modules.CityBuilder
             else if (r > 1)
             {
                 m_log.Info("[CITY BUILDER]: Multi-region city.");
+                IPAddress address = IPAddress.Parse("0.0.0.0");
                 regionInfo.ExternalHostName = Aurora.Framework.Utilities.GetExternalIp();
                 regionInfo.FindExternalAutomatically = true;
                 //  Construct the regions for the city.
@@ -567,15 +542,17 @@ namespace Aurora.Modules.CityBuilder
                 {
                     for (ry = 0; ry < r; ry++)
                     {
-                        IPAddress address = IPAddress.Parse("0.0.0.0");
                         regionInfo.InternalEndPoint = new IPEndPoint(address, regionPort++);
                         cityLandData.RegionID = regionInfo.RegionID;
+                        if(parcelService != null)
+                            parcelService.StoreLandObject(cityLandData.LandData);
                         regionInfo.RegionName = "Region" + rx + ry;
                         regionInfo.RegionLocX = (int)(m_DefaultStartLocation.X + rx);
                         regionInfo.RegionLocY = (int)(m_DefaultStartLocation.Y + ry);
                         m_log.InfoFormat("[CITY BUILDER]: '{0}' @ {1},{2}, http://{3}/", regionInfo.RegionName,
                             regionInfo.RegionLocX, regionInfo.RegionLocY, regionInfo.InternalEndPoint);
-                        EstateConnector.LinkRegion(regionInfo.RegionID, (int)m_DefaultEstate.EstateID, m_DefaultEstate.EstatePass);
+                        //We already set the estate before, we don't need to deal with linking it or anything
+                        //EstateConnector.LinkRegion(regionInfo.RegionID, (int)m_DefaultEstate.EstateID, m_DefaultEstate.EstatePass);
                         if (!createRegion(rx, ry, regionInfo))
                         {
                             m_log.InfoFormat("[CITY BUILDER]: Failed to construct region at {0},{1}", rx, ry);
